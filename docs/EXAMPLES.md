@@ -1,7 +1,6 @@
 # Workflow Examples
 
-Complete workflow patterns for Terraform CI/CD. Copy-paste and adapt to your needs.
-
+Complete workflow patterns for Terraform CI/CD.
 ## Pattern 1: PR Validation
 
 Validates Terraform code quality without Azure authentication.

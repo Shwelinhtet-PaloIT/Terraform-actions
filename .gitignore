@@ -35,3 +35,9 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+
+# Ignore Instruction files
+copilot-instructions.md
+*.instructions.md
+*.prompt.md

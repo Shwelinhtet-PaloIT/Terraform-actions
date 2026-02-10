@@ -4,7 +4,7 @@ GitHub composite actions for Terraform CI/CD pipelines with Azure. Designed for 
 
 ## Overview
 
-This repository provides 10 modular, reusable composite actions that enable secure and efficient Terraform workflows on Azure. Each action follows security best practices, OIDC authentication (no static secrets), and  security scanning with SARIF uploads to GitHub Advanced Security.
+This repository provides 11 modular, reusable composite actions that enable secure and efficient Terraform workflows on Azure. Each action follows security best practices, OIDC authentication (no static secrets), and  security scanning with SARIF uploads to GitHub Advanced Security.
 
 **Key Features:**
 -  **Security-First**: OIDC authentication, multi-layer scanning (tfsec, Checkov, Trivy), SARIF uploads
@@ -49,7 +49,8 @@ jobs:
 | **[azure-oidc-login](docs/REFERENCE.md#azure-oidc-login)** | Azure authentication via OIDC | Zero secrets, `ARM_*` env exports |
 | **[terraform-init](docs/REFERENCE.md#terraform-init)** | Initialize Terraform working directory | Dual mode: backend on/off |
 | **[terraform-validate](docs/REFERENCE.md#terraform-validate)** | Validate Terraform code quality | fmt + validate + tflint |
-| **[plan-metadata](docs/REFERENCE.md#plan-metadata)** | Generate plan metadata and hash | SHA256 hash for integrity |
+| **[determine-environment](docs/REFERENCE.md#determine-environment)** | Smart environment detection | Detects env from changed paths |
+| **[tfplan-metadata](docs/REFERENCE.md#tfplan-metadata)** | Generate plan metadata and hash | SHA256 hash for integrity |
 | **[scan-tfsec](docs/REFERENCE.md#scan-tfsec)** | tfsec Terraform security scan | SARIF upload to GitHub Security |
 | **[scan-checkov](docs/REFERENCE.md#scan-checkov)** | Checkov policy-as-code scan | 500+ policies, SARIF upload |
 | **[scan-trivy](docs/REFERENCE.md#scan-trivy)** | Trivy vulnerability scan | IaC config scanning |
@@ -64,7 +65,7 @@ jobs:
 
 ## Documentation
 
-- **[Action Reference](docs/REFERENCE.md)** - Complete specifications for all 10 actions (inputs, outputs, examples)
+- **[Action Reference](docs/REFERENCE.md)** - Complete specifications for all 11 actions (inputs, outputs, examples)
 - **[Usage Examples](docs/EXAMPLES.md)** - Copy-paste workflow patterns for common scenarios
 
 ## License
