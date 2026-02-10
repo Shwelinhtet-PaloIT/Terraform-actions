@@ -1,0 +1,75 @@
+name: 'Generate TFPlan Metadata'
+description: 'Generate metadata and hash for Terraform plan artifact'
+
+inputs:
+  working-directory:
+    description: 'Working directory containing tfplan file'
+    required: true
+  environment:
+    description: 'Target environment name'
+    required: true
+  terraform-version:
+    description: 'Terraform version used'
+    required: true
+
+outputs:
+  artifact-name:
+    description: 'Generated artifact name'
+    value: ${{ steps.metadata.outputs.artifact-name }}
+  plan-hash:
+    description: 'SHA256 hash of plan file'
+    value: ${{ steps.hash.outputs.sha256 }}
+
+runs:
+  using: composite
+  steps:
+    - name: Generate tfplan hash
+      id: hash
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        SHA256=$(sha256sum tfplan | cut -d' ' -f1)
+        echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+        echo "Plan SHA256: $SHA256"
+    
+    - name: Create artifact metadata
+      id: metadata
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PLAN_HASH: ${{ steps.hash.outputs.sha256 }}
+        TF_VERSION: ${{ inputs.terraform-version }}
+        ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        echo "::group::📦 Creating artifact metadata"
+        
+        # Generate artifact name
+        ARTIFACT_NAME="tfplan-${ENVIRONMENT}-${GITHUB_SHA::7}-$(date -u +%Y%m%d-%H%M%S)"
+        echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+        echo "Artifact: $ARTIFACT_NAME"
+        
+        # Create metadata JSON
+        jq -n \
+          --arg hash "$PLAN_HASH" \
+          --arg tf_ver "$TF_VERSION" \
+          --arg env "$ENVIRONMENT" \
+          --arg dir "${{ inputs.working-directory }}" \
+          --arg commit "$GITHUB_SHA" \
+          --arg ref "$GITHUB_REF" \
+          --arg actor "$GITHUB_ACTOR" \
+          --arg run_id "$GITHUB_RUN_ID" \
+          --arg run_num "$GITHUB_RUN_NUMBER" \
+          '{
+            plan_hash: $hash,
+            terraform_version: $tf_ver,
+            environment: $env,
+            working_directory: $dir,
+            git_commit: $commit,
+            git_ref: $ref,
+            git_actor: $actor,
+            workflow_run_id: $run_id,
+            workflow_run_number: $run_num,
+            created_at: (now | todate)
+          }' > plan-metadata.json
+        
+        echo "::endgroup::"

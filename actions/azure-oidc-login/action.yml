@@ -1,0 +1,32 @@
+name: 'Azure OIDC Login'
+description: 'Authenticate to Azure using OIDC (Workload Identity Federation)'
+
+inputs:
+  client-id:
+    description: 'Azure Client ID'
+    required: true
+  tenant-id:
+    description: 'Azure Tenant ID'
+    required: true
+  subscription-id:
+    description: 'Azure Subscription ID'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Azure Login (OIDC)
+      uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5  # v2.3.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        subscription-id: ${{ inputs.subscription-id }}
+    
+    - name: Export Terraform Environment Variables
+      shell: bash
+      run: |
+        echo "ARM_CLIENT_ID=${{ inputs.client-id }}" >> $GITHUB_ENV
+        echo "ARM_TENANT_ID=${{ inputs.tenant-id }}" >> $GITHUB_ENV
+        echo "ARM_SUBSCRIPTION_ID=${{ inputs.subscription-id }}" >> $GITHUB_ENV
+        echo "ARM_USE_OIDC=true" >> $GITHUB_ENV
+        echo "✅  Terraform environment variables exported"

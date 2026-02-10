@@ -1,0 +1,106 @@
+name: 'Terraform Validate'
+description: 'Run Terraform validation checks (fmt, validate, tflint)'
+
+inputs:
+  working-directory:
+    description: 'Working directory containing Terraform code'
+    required: false
+    default: '.'
+  
+  enable-tflint:
+    description: 'Enable tflint code quality linting'
+    required: false
+    default: 'true'
+  
+  tflint-version:
+    description: 'tflint version to use'
+    required: false
+    default: 'v0.60.0'
+
+outputs:
+  fmt-status:
+    description: 'Terraform format check status (success/failure)'
+    value: ${{ steps.check-status.outputs.fmt-status }}
+  validate-status:
+    description: 'Terraform validate status (success/failure)'
+    value: ${{ steps.check-status.outputs.validate-status }}
+  tflint-status:
+    description: 'tflint validation status (success/failure/skipped)'
+    value: ${{ steps.check-status.outputs.tflint-status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Terraform Format Check
+      id: fmt
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "=== Terraform Format Check ==="
+        terraform fmt -check -recursive -diff
+    
+    - name: Terraform Validate
+      id: validate
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "=== Terraform Validate ==="
+        terraform validate -no-color
+    
+    - name: Setup tflint
+      if: inputs.enable-tflint == 'true'
+      uses: terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987 # v4.0.0
+      with:
+        tflint_version: ${{ inputs.tflint-version }}
+    
+    - name: Run tflint
+      id: tflint
+      if: inputs.enable-tflint == 'true'
+      continue-on-error: true
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "=== tflint Code Quality Check ==="
+        tflint --init
+        tflint --format compact --color
+    
+    - name: Check Validation Statuses
+      id: check-status
+      if: always()
+      shell: bash
+      run: |
+        # Check fmt status
+        if [ "${{ steps.fmt.outcome }}" == "success" ]; then
+          echo "fmt-status=success" >> $GITHUB_OUTPUT
+          echo "✅ fmt: Passed"
+        else
+          echo "fmt-status=failure" >> $GITHUB_OUTPUT
+          echo "❌ fmt: Failed"
+        fi
+        
+        # Check validate status
+        if [ "${{ steps.validate.outcome }}" == "success" ]; then
+          echo "validate-status=success" >> $GITHUB_OUTPUT
+          echo "✅ validate: Passed"
+        else
+          echo "validate-status=failure" >> $GITHUB_OUTPUT
+          echo "❌ validate: Failed"
+        fi
+        
+        # Check tflint status
+        if [ "${{ inputs.enable-tflint }}" != "true" ]; then
+          echo "tflint-status=skipped" >> $GITHUB_OUTPUT
+          echo "⏭️ tflint: Skipped (disabled)"
+        elif [ "${{ steps.tflint.outcome }}" == "success" ]; then
+          echo "tflint-status=success" >> $GITHUB_OUTPUT
+          echo "✅ tflint: Passed"
+        else
+          echo "tflint-status=failure" >> $GITHUB_OUTPUT
+          echo "❌ tflint: Failed"
+        fi
+        
+        # Fail if any check failed
+        if [ "${{ steps.fmt.outcome }}" != "success" ] || [ "${{ steps.validate.outcome }}" != "success" ] || ( [ "${{ inputs.enable-tflint }}" == "true" ] && [ "${{ steps.tflint.outcome }}" != "success" ] ); then
+          echo "::error::One or more validation checks failed"
+          exit 1
+        fi

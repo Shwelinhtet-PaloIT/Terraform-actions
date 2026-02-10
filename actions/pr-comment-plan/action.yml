@@ -1,0 +1,68 @@
+name: 'Comment Terraform Plan on PR'
+description: 'Post Terraform plan output as a comment on the pull request'
+
+inputs:
+  working-directory:
+    description: 'Directory containing plan-output.txt'
+    required: true
+  environment:
+    description: 'Target environment'
+    required: true
+  terraform-version:
+    description: 'Terraform version used'
+    required: true
+  plan-hash:
+    description: 'SHA256 hash of the plan'
+    required: true
+  plan-exitcode:
+    description: 'Terraform plan exit code'
+    required: true
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+
+runs:
+  using: composite
+  steps: 
+    - name: Comment Terraform plan on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const planOutput = fs.readFileSync('${{ inputs.working-directory }}/plan-output.txt', 'utf8');
+          
+          // Truncate if too long (GitHub comment limit)
+          const maxLength = 65000;
+          const truncatedPlan = planOutput.length > maxLength 
+            ? planOutput.substring(0, maxLength) + '\n\n...(truncated)'
+            : planOutput;
+          
+          const output = `#### Terraform Plan Results 📋
+          
+          **Environment**: \`${{ inputs.environment }}\`
+          **Working Directory**: \`${{ inputs.working-directory }}\`
+          **Terraform Version**: \`${{ inputs.terraform-version }}\`
+          **Plan Hash**: \`${{ inputs.plan-hash }}\`
+          
+          <details>
+          <summary>Show Terraform Plan</summary>
+          
+          \`\`\`terraform
+          ${truncatedPlan}
+          \`\`\`
+          
+          </details>
+          
+          **Exit Code**: ${{ inputs.plan-exitcode }} (${{ inputs.plan-exitcode == '0' && 'No changes' || inputs.plan-exitcode == '2' && 'Changes detected' || 'Error' }})
+          
+          *Workflow*: [\`${process.env.GITHUB_WORKFLOW}\`](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})
+          *Commit*: ${process.env.GITHUB_SHA}`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });

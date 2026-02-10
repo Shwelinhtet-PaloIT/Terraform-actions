@@ -1,0 +1,241 @@
+name: 'Determine Terraform Environment'
+description: 'Intelligently detects target environment based on changed files in env/ folders or manual input'
+
+inputs:
+  manual-environment:
+    description: 'Manual environment selection (for workflow_dispatch events)'
+    required: false
+    default: ''
+  
+  working-directory-prefix:
+    description: 'Prefix for working directory path (e.g., ./env)'
+    required: false
+    default: './env'
+  
+  base-ref:
+    description: 'Base branch for git diff comparison (for PR events)'
+    required: false
+    default: 'main'
+  
+  fallback-environment:
+    description: 'Fallback environment when no changes detected'
+    required: false
+    default: 'dev'
+
+outputs:
+  environment:
+    description: 'Detected environment (dev/stage/prod)'
+    value: ${{ steps.determine.outputs.environment }}
+  
+  working-directory:
+    description: 'Full path to environment working directory'
+    value: ${{ steps.determine.outputs.working-directory }}
+  
+  changed-paths:
+    description: 'Comma-separated list of changed environment paths'
+    value: ${{ steps.determine.outputs.changed-paths }}
+  
+  detection-method:
+    description: 'How environment was detected (manual/path-based/fallback)'
+    value: ${{ steps.determine.outputs.detection-method }}
+  
+  is-multi-env:
+    description: 'Whether multiple environments were changed (true/false)'
+    value: ${{ steps.determine.outputs.is-multi-env }}
+
+runs:
+  using: 'composite'
+  steps:
+    # Step 1: Detect changed paths using dorny/paths-filter
+    - name: Detect Changed Paths
+      if: inputs.manual-environment == ''
+      id: filter
+      uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+      with:
+        filters: |
+          dev:
+            - 'env/dev/**'
+          stage:
+            - 'env/stage/**'
+          prod:
+            - 'env/prod/**'
+          modules:
+            - 'modules/**'
+          workflows:
+            - '.github/workflows/**'
+    
+    # Step 2: Intelligent environment determination logic
+    - name: Determine Environment
+      id: determine
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "🔍 Starting environment detection..."
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        # Initialize variables
+        ENV=""
+        METHOD=""
+        CHANGED_PATHS=""
+        IS_MULTI_ENV="false"
+        
+        # Priority 1: Manual input (workflow_dispatch)
+        if [ -n "${{ inputs.manual-environment }}" ]; then
+          ENV="${{ inputs.manual-environment }}"
+          METHOD="manual"
+          echo "✋ Manual environment selected: ${ENV}"
+        
+        # Priority 2: Path-based detection
+        else
+          echo "📂 Analyzing changed paths..."
+          
+          DEV_CHANGED="${{ steps.filter.outputs.dev }}"
+          STAGE_CHANGED="${{ steps.filter.outputs.stage }}"
+          PROD_CHANGED="${{ steps.filter.outputs.prod }}"
+          MODULES_CHANGED="${{ steps.filter.outputs.modules }}"
+          
+          echo "   - env/dev: ${DEV_CHANGED}"
+          echo "   - env/stage: ${STAGE_CHANGED}"
+          echo "   - env/prod: ${PROD_CHANGED}"
+          echo "   - modules: ${MODULES_CHANGED}"
+          
+          # Count how many environments changed
+          ENV_COUNT=0
+          CHANGED_ENVS=()
+          
+          if [ "${DEV_CHANGED}" == "true" ]; then
+            ((ENV_COUNT++))
+            CHANGED_ENVS+=("dev")
+            CHANGED_PATHS="${CHANGED_PATHS}env/dev,"
+          fi
+          
+          if [ "${STAGE_CHANGED}" == "true" ]; then
+            ((ENV_COUNT++))
+            CHANGED_ENVS+=("stage")
+            CHANGED_PATHS="${CHANGED_PATHS}env/stage,"
+          fi
+          
+          if [ "${PROD_CHANGED}" == "true" ]; then
+            ((ENV_COUNT++))
+            CHANGED_ENVS+=("prod")
+            CHANGED_PATHS="${CHANGED_PATHS}env/prod,"
+          fi
+          
+          # Remove trailing comma
+          CHANGED_PATHS="${CHANGED_PATHS%,}"
+          
+          # Decision logic
+          if [ ${ENV_COUNT} -eq 0 ]; then
+            # No environment directories changed
+            if [ "${MODULES_CHANGED}" == "true" ]; then
+              ENV="${{ inputs.fallback-environment }}"
+              METHOD="modules-only"
+              CHANGED_PATHS="modules/"
+              echo "🔧 Only modules changed - defaulting to: ${ENV}"
+            else
+              ENV="${{ inputs.fallback-environment }}"
+              METHOD="fallback"
+              echo "⚠️  No environment changes detected - using fallback: ${ENV}"
+            fi
+          
+          elif [ ${ENV_COUNT} -eq 1 ]; then
+            # Single environment changed - GOOD!
+            ENV="${CHANGED_ENVS[0]}"
+            METHOD="path-based"
+            echo "✅ Single environment detected: ${ENV}"
+            echo "   Changed paths: ${CHANGED_PATHS}"
+          
+          else
+            # Multiple environments changed - ERROR!
+            IS_MULTI_ENV="true"
+            METHOD="multi-env-error"
+            echo "❌ ERROR: Multiple environments changed: ${CHANGED_ENVS[*]}"
+            echo "   This is not supported in the current workflow."
+            echo "   Changed paths: ${CHANGED_PATHS}"
+            echo ""
+            echo "::error title=Multiple Environments Changed::Detected changes in ${ENV_COUNT} environments (${CHANGED_ENVS[*]}). Please split your changes into separate PRs for each environment."
+            echo ""
+            echo "💡 Recommended actions:"
+            echo "   1. Create separate PRs for each environment"
+            echo "   2. Or use workflow_dispatch to manually select target environment"
+            echo "   3. Review changed paths: ${CHANGED_PATHS}"
+            exit 1
+          fi
+        fi
+        
+        # Construct working directory
+        WORKING_DIR="${{ inputs.working-directory-prefix }}/${ENV}"
+        
+        # Set outputs
+        echo "environment=${ENV}" >> $GITHUB_OUTPUT
+        echo "working-directory=${WORKING_DIR}" >> $GITHUB_OUTPUT
+        echo "changed-paths=${CHANGED_PATHS}" >> $GITHUB_OUTPUT
+        echo "detection-method=${METHOD}" >> $GITHUB_OUTPUT
+        echo "is-multi-env=${IS_MULTI_ENV}" >> $GITHUB_OUTPUT
+        
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🌍 Environment: ${ENV}"
+        echo "📁 Working Directory: ${WORKING_DIR}"
+        echo "🔍 Detection Method: ${METHOD}"
+        echo "📋 Changed Paths: ${CHANGED_PATHS:-none}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    # Step 3: Generate GitHub Step Summary (following terraform-ci.yml pattern)
+    - name: Generate Step Summary
+      shell: bash
+      run: |
+        # Capture outputs as bash variables
+        ENV="${{ steps.determine.outputs.environment }}"
+        WORKING_DIR="${{ steps.determine.outputs.working-directory }}"
+        METHOD="${{ steps.determine.outputs.detection-method }}"
+        CHANGED_PATHS="${{ steps.determine.outputs.changed-paths }}"
+        
+        # Generate step summary with proper variable substitution
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        ## 🌍 Environment Detection Results
+        
+        | Item | Value |
+        |------|-------|
+        | **Environment** | \`${ENV}\` |
+        | **Working Directory** | \`${WORKING_DIR}\` |
+        | **Detection Method** | ${METHOD} |
+        | **Changed Paths** | ${CHANGED_PATHS:-none} |
+        
+        ### Detection Method Details
+        
+        EOF
+        
+        if [ "${METHOD}" == "manual" ]; then
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+        ✋ **Manual Selection**  
+        Environment was manually selected via `workflow_dispatch` input.
+        EOF
+        
+        elif [ "${METHOD}" == "path-based" ]; then
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+        ✅ **Path-Based Detection**  
+        Environment automatically detected from changed files in `env/` directory.
+        EOF
+        
+        elif [ "${METHOD}" == "modules-only" ]; then
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+        🔧 **Modules-Only Changes**  
+        Only shared modules were modified. Defaulting to \`${ENV}\` for validation.
+        
+        > **Note**: Module changes may affect multiple environments. Consider running manual workflows for stage/prod if needed.
+        EOF
+        
+        elif [ "${METHOD}" == "fallback" ]; then
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+        ⚠️ **Fallback Mode**  
+        No environment-specific changes detected. Using fallback environment: \`${ENV}\`
+        EOF
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "---" >> $GITHUB_STEP_SUMMARY
+
+branding:
+  icon: 'compass'
+  color: 'blue'

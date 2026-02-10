@@ -1,0 +1,34 @@
+name: 'Terraform Init'
+description: 'Initialize Terraform working directory with Azure backend'
+
+inputs:
+  working-directory:
+    description: 'Working directory containing Terraform code'
+    required: true
+    default: '.'
+  enable-backend:
+    description: 'Enable Azure backend configuration (set to false for security scans)'
+    required: false
+    default: 'true'
+  # Note: Azure credentials come from environment variables set by azure-oidc-login action
+  # Requires ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_USE_OIDC
+
+runs:
+  using: composite
+  steps:
+    - name: Terraform Init
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "::group::Terraform Init"
+        
+        if [ "${{ inputs.enable-backend }}" == "false" ]; then
+          echo "Initializing without backend (for security scans)..."
+          terraform init -backend=false
+        else
+          echo "Initializing with Azure backend..."
+          terraform init
+        fi
+        
+        echo "✅ Terraform initialized successfully"
+        echo "::endgroup::"

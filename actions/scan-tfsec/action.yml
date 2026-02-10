@@ -1,0 +1,71 @@
+name: 'tfsec Security Scan'
+description: 'Run tfsec Terraform security scanning with SARIF upload'
+
+inputs:
+  enabled:
+    description: 'Enable tfsec scanning (true/false)'
+    required: true
+  
+  working-directory:
+    description: 'Working directory containing Terraform code'
+    required: true
+  
+  severity:
+    description: 'Minimum severity to fail (LOW, MEDIUM, HIGH, CRITICAL)'
+    required: true
+  
+  environment:
+    description: 'Target environment for SARIF category naming'
+    required: true
+  
+  var-file:
+    description: 'Terraform variable file (optional)'
+    required: false
+    default: ''
+
+outputs:
+  outcome:
+    description: 'Scan outcome (success/failure/skipped)'
+    value: ${{ steps.result.outputs.outcome }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run tfsec security scan
+      id: scan
+      if: inputs.enabled == 'true'
+      continue-on-error: true
+      uses: aquasecurity/tfsec-action@b466648d6e39e7c75324f25d83891162a721f2d6 # v1.0.3
+      with:
+        working_directory: ${{ inputs.working-directory }}
+        format: sarif
+        additional_args: --out results.sarif --minimum-severity ${{ inputs.severity }} --exclude-downloaded-modules
+    
+    - name: Upload tfsec SARIF
+      if: inputs.enabled == 'true' && always()
+      continue-on-error: true
+      uses: github/codeql-action/upload-sarif@7434149006143a4d75b82a2f411ef15b03ccc2d7 # v4.32.2
+      with:
+        sarif_file: results.sarif
+        category: tfsec-${{ inputs.environment }}
+        wait-for-processing: true
+    
+    - name: Set outcome
+      id: result
+      if: always()
+      shell: bash
+      run: |
+        if [ "${{ inputs.enabled }}" != "true" ]; then
+          echo "outcome=skipped" >> $GITHUB_OUTPUT
+          echo "⏭️ tfsec: Skipped (disabled)"
+        elif [ "${{ steps.scan.outcome }}" == "success" ] && [ -f "results.sarif" ]; then
+          echo "outcome=success" >> $GITHUB_OUTPUT
+          echo "✅ tfsec: Passed"
+        else
+          echo "outcome=failure" >> $GITHUB_OUTPUT
+          echo "❌ tfsec: Failed"
+          if [ ! -f "results.sarif" ]; then
+            echo "::warning::tfsec SARIF file not generated - scan may have errored"
+          fi
+          exit 1
+        fi

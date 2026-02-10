@@ -1,0 +1,100 @@
+name: 'Aggregate Security Scan Results'
+description: 'Aggregate and evaluate results from multiple security scanners'
+
+inputs:
+  tfsec-enabled:
+    description: 'Whether tfsec was enabled'
+    required: true
+  tfsec-outcome:
+    description: 'Outcome of tfsec scan step'
+    required: true
+  checkov-enabled:
+    description: 'Whether Checkov was enabled'
+    required: true
+  trivy-enabled:
+    description: 'Whether Trivy was enabled'
+    required: true
+  checkov-outcome:
+    description: 'Outcome of Checkov scan step'
+    required: true
+  trivy-outcome:
+    description: 'Outcome of Trivy scan step'
+    required: true
+
+outputs:
+  all-passed:
+    description: 'Whether all enabled scans passed'
+    value: ${{ steps.aggregate.outputs.all-passed }}
+  tfsec-status:
+    description: 'tfsec scan status (success, failure, or skipped)'
+    value: ${{ steps.aggregate.outputs.tfsec-status }}
+  checkov-status:
+    description: 'Checkov scan status (success, failure, or skipped)'
+    value: ${{ steps.aggregate.outputs.checkov-status }}
+  trivy-status:
+    description: 'Trivy scan status (success, failure, or skipped)'
+    value: ${{ steps.aggregate.outputs.trivy-status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Aggregate security scan results
+      id: aggregate
+      shell: bash
+      run: |
+        echo "::group::Security Scan Summary"
+        
+        TFSEC_STATUS="${{ inputs.tfsec-outcome }}"
+        CHECKOV_STATUS="${{ inputs.checkov-outcome }}"
+        TRIVY_STATUS="${{ inputs.trivy-outcome }}"
+        
+        echo "tfsec: $TFSEC_STATUS"
+        echo "Checkov: $CHECKOV_STATUS"
+        echo "Trivy: $TRIVY_STATUS"
+        
+        # Determine individual scanner statuses
+        TFSEC_FINAL="skipped"
+        CHECKOV_FINAL="skipped"
+        TRIVY_FINAL="skipped"
+        
+        if [[ "${{ inputs.tfsec-enabled }}" == "true" ]]; then
+          TFSEC_FINAL="$TFSEC_STATUS"
+        fi
+        
+        if [[ "${{ inputs.checkov-enabled }}" == "true" ]]; then
+          CHECKOV_FINAL="$CHECKOV_STATUS"
+        fi
+        
+        if [[ "${{ inputs.trivy-enabled }}" == "true" ]]; then
+          TRIVY_FINAL="$TRIVY_STATUS"
+        fi
+        
+        # Check if all enabled scans passed
+        ALL_PASSED=true
+        
+        if [[ "${{ inputs.tfsec-enabled }}" == "true" && "$TFSEC_STATUS" != "success" ]]; then
+          ALL_PASSED=false
+        fi
+        
+        if [[ "${{ inputs.checkov-enabled }}" == "true" && "$CHECKOV_STATUS" != "success" ]]; then
+          ALL_PASSED=false
+        fi
+        
+        if [[ "${{ inputs.trivy-enabled }}" == "true" && "$TRIVY_STATUS" != "success" ]]; then
+          ALL_PASSED=false
+        fi
+        
+        # Output all statuses
+        echo "all-passed=$ALL_PASSED" >> $GITHUB_OUTPUT
+        echo "tfsec-status=$TFSEC_FINAL" >> $GITHUB_OUTPUT
+        echo "checkov-status=$CHECKOV_FINAL" >> $GITHUB_OUTPUT
+        echo "trivy-status=$TRIVY_FINAL" >> $GITHUB_OUTPUT
+        
+        echo "::endgroup::"
+        
+        if [[ "$ALL_PASSED" == "false" ]]; then
+          echo "::error::One or more security scans failed - Review the scan results above"
+          echo "❌ Security scans failed"
+        else
+          echo "✅ All security scans passed"
+        fi
