@@ -41,3 +41,4 @@ terraform.rc
 copilot-instructions.md
 *.instructions.md
 *.prompt.md
+.github/copilot-instructions.md
